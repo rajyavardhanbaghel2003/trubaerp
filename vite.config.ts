@@ -12,7 +12,9 @@ export default defineConfig(({ mode }) => ({
     ],
   },
   plugins: [
-    react(),
+    react({
+      jsxImportSource: "react",
+    }),
     mode === "development" && componentTagger(),
   ].filter(Boolean),
   resolve: {
