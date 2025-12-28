@@ -53,39 +53,48 @@ export function AddStudentModal({ open, onOpenChange, onSuccess }: AddStudentMod
     setLoading(true);
     
     try {
-      // Sign up the new student
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: {
-            full_name: formData.fullName,
-            role: 'student',
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        toast.error('You must be logged in as admin');
+        return;
+      }
+
+      // Call edge function to create student (won't affect admin session)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-student`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           },
-        },
-      });
-
-      if (authError) throw authError;
-
-      if (authData.user) {
-        // Update the profile with additional info
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({
-            student_id: formData.studentId || null,
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+            fullName: formData.fullName,
+            studentId: formData.studentId || null,
             department: formData.department || null,
             semester: parseInt(formData.semester) || null,
             phone: formData.phone || null,
-          })
-          .eq('user_id', authData.user.id);
-
-        if (profileError) {
-          console.error('Profile update error:', profileError);
+          }),
         }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create student');
       }
 
-      toast.success('Student added successfully!');
+      if (result.warning) {
+        toast.warning(result.warning);
+      } else {
+        toast.success('Student added with 8 semester fees (₹80,000 each)!');
+      }
+
       setFormData({
         email: '',
         password: '',
@@ -97,12 +106,13 @@ export function AddStudentModal({ open, onOpenChange, onSuccess }: AddStudentMod
       });
       onOpenChange(false);
       onSuccess();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error adding student:', error);
-      if (error.message?.includes('already registered')) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add student';
+      if (errorMessage.includes('already') || errorMessage.includes('exists')) {
         toast.error('A user with this email already exists');
       } else {
-        toast.error(error.message || 'Failed to add student');
+        toast.error(errorMessage);
       }
     } finally {
       setLoading(false);

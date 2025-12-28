@@ -16,24 +16,18 @@ const authSchema = z.object({
 });
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
   const [role, setRole] = useState<"student" | "admin">("student");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { signIn, signUp } = useAuth();
+  const { signIn } = useAuth();
   const navigate = useNavigate();
 
   const validateForm = () => {
     try {
-      if (isLogin) {
-        authSchema.pick({ email: true, password: true }).parse({ email, password });
-      } else {
-        authSchema.parse({ email, password, fullName });
-      }
+      authSchema.pick({ email: true, password: true }).parse({ email, password });
       setErrors({});
       return true;
     } catch (error) {
@@ -58,30 +52,16 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (error) {
-          if (error.message.includes("Invalid login")) {
-            toast.error("Invalid email or password");
-          } else {
-            toast.error(error.message);
-          }
+      const { error } = await signIn(email, password);
+      if (error) {
+        if (error.message.includes("Invalid login")) {
+          toast.error("Invalid email or password");
         } else {
-          toast.success("Welcome back!");
-          navigate(role === "admin" ? "/admin" : "/student");
+          toast.error(error.message);
         }
       } else {
-        const { error } = await signUp(email, password, fullName, role);
-        if (error) {
-          if (error.message.includes("already registered")) {
-            toast.error("This email is already registered");
-          } else {
-            toast.error(error.message);
-          }
-        } else {
-          toast.success("Account created successfully!");
-          navigate(role === "admin" ? "/admin" : "/student");
-        }
+        toast.success("Welcome back!");
+        navigate(role === "admin" ? "/admin" : "/student");
       }
     } catch (error) {
       toast.error("An unexpected error occurred");
@@ -163,15 +143,15 @@ export default function Auth() {
               <GraduationCap className="w-7 h-7" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Truba</h1>
+              <h1 className="text-2xl font-bold">EduPay</h1>
               <p className="text-sm text-muted-foreground">Educational ERP</p>
             </div>
           </div>
 
           <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-2">{isLogin ? "Welcome back" : "Create account"}</h2>
+            <h2 className="text-2xl font-bold mb-2">Welcome back</h2>
             <p className="text-muted-foreground">
-              {isLogin ? "Enter your credentials to access your account" : "Fill in your details to get started"}
+              Enter your credentials to access your account
             </p>
           </div>
 
@@ -198,23 +178,6 @@ export default function Auth() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  <Input
-                    id="fullName"
-                    type="text"
-                    placeholder="John Doe"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
-              </div>
-            )}
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -253,7 +216,7 @@ export default function Auth() {
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  {isLogin ? "Sign In" : "Create Account"}
+                  Sign In
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </>
               )}

@@ -16,6 +16,10 @@ interface Fee {
   status: string;
   academic_year: string;
   semester: number;
+  tuition_fee: number;
+  library_fee: number;
+  lab_fee: number;
+  other_charges: number;
 }
 
 export default function PayFees() {
@@ -42,7 +46,7 @@ export default function PayFees() {
         .select('*')
         .eq('user_id', user?.id)
         .eq('status', 'pending')
-        .order('due_date', { ascending: true });
+        .order('semester', { ascending: true });
 
       if (error) throw error;
       setFees(data || []);
@@ -58,37 +62,63 @@ export default function PayFees() {
     setPaymentModal({ open: true, feeId, amount, feeType });
   };
 
-  const handlePaymentComplete = async () => {
-    const transactionId = `TXN${Date.now()}`;
-    const receiptNumber = `RCP${Date.now()}`;
-
+  const handlePaymentComplete = async (feeIds: string[]) => {
     try {
-      const { error: paymentError } = await supabase.from('payments').insert({
-        user_id: user?.id,
-        fee_id: paymentModal.feeId,
-        amount: paymentModal.amount,
-        payment_method: 'card',
-        transaction_id: transactionId,
-        receipt_number: receiptNumber,
-        status: 'completed',
-      });
+      const successfulIds: string[] = [];
 
-      if (paymentError) throw paymentError;
+      for (const feeId of feeIds) {
+        const fee = fees.find(f => f.id === feeId);
+        if (!fee) continue;
 
-      const { error: feeError } = await supabase
-        .from('fees')
-        .update({ status: 'paid' })
-        .eq('id', paymentModal.feeId);
+        const transactionId = `TXN${Date.now()}_${feeId.slice(0, 8)}`;
+        const receiptNumber = `RCP${Date.now()}_${feeId.slice(0, 8)}`;
 
-      if (feeError) throw feeError;
+        // Insert payment – trigger auto-marks fee as 'paid'
+        const { error: paymentError } = await supabase.from('payments').insert({
+          user_id: user?.id,
+          fee_id: feeId,
+          amount: fee.amount,
+          payment_method: 'card',
+          transaction_id: transactionId,
+          receipt_number: receiptNumber,
+          status: 'completed',
+        });
 
-      toast.success('Payment successful!');
-      fetchFees();
+        if (paymentError) {
+          console.error('Payment error for fee:', feeId, paymentError);
+          toast.error(`Payment for Semester ${fee.semester} failed.`);
+          continue;
+        }
+
+        successfulIds.push(feeId);
+      }
+
+      if (successfulIds.length > 0) {
+        // Remove paid fees from local state immediately
+        setFees(prevFees => prevFees.filter(f => !successfulIds.includes(f.id)));
+        toast.success(
+          successfulIds.length > 1
+            ? `${successfulIds.length} semesters paid successfully!`
+            : 'Payment successful!'
+        );
+      }
     } catch (error) {
       console.error('Payment error:', error);
       toast.error('Payment failed. Please try again.');
     }
   };
+
+  // Prepare pending fees for modal
+  const pendingFeesForModal = fees.map(f => ({
+    id: f.id,
+    semester: f.semester,
+    academic_year: f.academic_year,
+    amount: Number(f.amount),
+    tuition_fee: Number(f.tuition_fee || 0),
+    library_fee: Number(f.library_fee || 0),
+    lab_fee: Number(f.lab_fee || 0),
+    other_charges: Number(f.other_charges || 0),
+  }));
 
   return (
     <DashboardLayout>
@@ -128,6 +158,10 @@ export default function PayFees() {
                 status={fee.status as 'pending' | 'paid' | 'overdue'}
                 academicYear={fee.academic_year}
                 semester={fee.semester}
+                tuitionFee={Number(fee.tuition_fee || 0)}
+                libraryFee={Number(fee.library_fee || 0)}
+                labFee={Number(fee.lab_fee || 0)}
+                otherCharges={Number(fee.other_charges || 0)}
                 onPayClick={handlePayClick}
                 delay={index * 0.1}
               />
@@ -141,6 +175,8 @@ export default function PayFees() {
         onOpenChange={(open) => setPaymentModal({ ...paymentModal, open })}
         amount={paymentModal.amount}
         feeType={paymentModal.feeType}
+        feeId={paymentModal.feeId}
+        pendingFees={pendingFeesForModal}
         onPaymentComplete={handlePaymentComplete}
       />
     </DashboardLayout>

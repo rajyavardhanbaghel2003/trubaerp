@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import confetti from 'canvas-confetti';
 
 interface FeeBreakdown {
@@ -34,7 +34,7 @@ interface PaymentModalProps {
   feeId?: string;
   pendingFees?: PendingFee[];
   breakdown?: FeeBreakdown;
-  onPaymentComplete: (feeId: string) => void;
+  onPaymentComplete: (feeIds: string[]) => void;
 }
 
 type PaymentStep = 'form' | 'processing' | 'success';
@@ -54,32 +54,46 @@ export function PaymentModal({
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
   const [name, setName] = useState('');
-  const [selectedFeeId, setSelectedFeeId] = useState<string>(feeId || '');
-  const [selectedFee, setSelectedFee] = useState<PendingFee | null>(null);
+  const [selectedFeeIds, setSelectedFeeIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if (feeId) {
-      setSelectedFeeId(feeId);
-    } else if (pendingFees.length > 0) {
-      setSelectedFeeId(pendingFees[0].id);
+    if (open) {
+      // Reset selection when modal opens
+      if (feeId) {
+        setSelectedFeeIds([feeId]);
+      } else if (pendingFees.length > 0) {
+        setSelectedFeeIds([pendingFees[0].id]);
+      }
     }
-  }, [feeId, pendingFees]);
+  }, [open, feeId, pendingFees]);
 
-  useEffect(() => {
-    if (selectedFeeId && pendingFees.length > 0) {
-      const fee = pendingFees.find(f => f.id === selectedFeeId);
-      setSelectedFee(fee || null);
+  const handleFeeToggle = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedFeeIds(prev => [...prev, id]);
+    } else {
+      setSelectedFeeIds(prev => prev.filter(fid => fid !== id));
     }
-  }, [selectedFeeId, pendingFees]);
+  };
 
-  const currentBreakdown = selectedFee ? {
-    tuition_fee: selectedFee.tuition_fee,
-    library_fee: selectedFee.library_fee,
-    lab_fee: selectedFee.lab_fee,
-    other_charges: selectedFee.other_charges,
-  } : breakdown;
+  const selectAll = () => {
+    setSelectedFeeIds(pendingFees.map(f => f.id));
+  };
 
-  const currentAmount = selectedFee ? selectedFee.amount : amount;
+  const selectedFeesData = pendingFees.filter(f => selectedFeeIds.includes(f.id));
+  
+  const totalAmount = selectedFeesData.reduce((sum, f) => sum + f.amount, 0);
+  const totalBreakdown = selectedFeesData.reduce(
+    (acc, f) => ({
+      tuition_fee: acc.tuition_fee + f.tuition_fee,
+      library_fee: acc.library_fee + f.library_fee,
+      lab_fee: acc.lab_fee + f.lab_fee,
+      other_charges: acc.other_charges + f.other_charges,
+    }),
+    { tuition_fee: 0, library_fee: 0, lab_fee: 0, other_charges: 0 }
+  );
+
+  const currentBreakdown = selectedFeesData.length > 0 ? totalBreakdown : breakdown;
+  const currentAmount = selectedFeesData.length > 0 ? totalAmount : amount;
 
   const formatCardNumber = (value: string) => {
     const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
@@ -115,35 +129,23 @@ export function PaymentModal({
       });
     }
 
-    fire(0.25, {
-      spread: 26,
-      startVelocity: 55,
-    });
-    fire(0.2, {
-      spread: 60,
-    });
-    fire(0.35, {
-      spread: 100,
-      decay: 0.91,
-      scalar: 0.8,
-    });
-    fire(0.1, {
-      spread: 120,
-      startVelocity: 25,
-      decay: 0.92,
-      scalar: 1.2,
-    });
-    fire(0.1, {
-      spread: 120,
-      startVelocity: 45,
-    });
+    fire(0.25, { spread: 26, startVelocity: 55 });
+    fire(0.2, { spread: 60 });
+    fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+    fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+    fire(0.1, { spread: 120, startVelocity: 45 });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (selectedFeeIds.length === 0) {
+      return;
+    }
+    
     setStep('processing');
     
-    // Simulate payment processing (2 seconds as requested)
+    // Simulate payment processing
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     setStep('success');
@@ -151,7 +153,7 @@ export function PaymentModal({
     
     // Auto-close after success animation
     setTimeout(() => {
-      onPaymentComplete(selectedFeeId || feeId || '');
+      onPaymentComplete(selectedFeeIds);
       handleClose();
     }, 2500);
   };
@@ -162,12 +164,13 @@ export function PaymentModal({
     setExpiry('');
     setCvv('');
     setName('');
+    setSelectedFeeIds([]);
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md overflow-hidden">
+      <DialogContent className="sm:max-w-md overflow-hidden max-h-[90vh] overflow-y-auto">
         <AnimatePresence mode="wait">
           {step === 'form' && (
             <motion.div
@@ -184,22 +187,40 @@ export function PaymentModal({
                 </DialogTitle>
               </DialogHeader>
 
-              {/* Semester Selector */}
-              {pendingFees.length > 1 && (
-                <div className="mt-4 space-y-2">
-                  <Label>Select Semester</Label>
-                  <Select value={selectedFeeId} onValueChange={setSelectedFeeId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select semester to pay" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {pendingFees.map((fee) => (
-                        <SelectItem key={fee.id} value={fee.id}>
-                          Semester {fee.semester} - {fee.academic_year} (₹{fee.amount.toLocaleString()})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              {/* Multi-Semester Selection */}
+              {pendingFees.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Select Semesters to Pay</Label>
+                    {pendingFees.length > 1 && (
+                      <Button variant="ghost" size="sm" onClick={selectAll} className="text-xs">
+                        Select All ({pendingFees.length})
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+                    {pendingFees.map((fee) => (
+                      <div key={fee.id} className="flex items-center space-x-3">
+                        <Checkbox
+                          id={fee.id}
+                          checked={selectedFeeIds.includes(fee.id)}
+                          onCheckedChange={(checked) => handleFeeToggle(fee.id, checked === true)}
+                        />
+                        <label 
+                          htmlFor={fee.id} 
+                          className="flex-1 text-sm cursor-pointer flex justify-between"
+                        >
+                          <span>Semester {fee.semester} - {fee.academic_year}</span>
+                          <span className="font-medium">₹{fee.amount.toLocaleString()}</span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedFeeIds.length > 1 && (
+                    <p className="text-sm text-muted-foreground">
+                      {selectedFeeIds.length} semesters selected
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -293,8 +314,16 @@ export function PaymentModal({
                   <span>Your payment is secured with 256-bit encryption</span>
                 </div>
 
-                <Button type="submit" className="w-full" size="lg">
-                  Confirm Payment - ₹{currentAmount.toLocaleString()}
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  size="lg"
+                  disabled={selectedFeeIds.length === 0}
+                >
+                  {selectedFeeIds.length === 0 
+                    ? 'Select fees to pay' 
+                    : `Confirm Payment - ₹${currentAmount.toLocaleString()}`
+                  }
                 </Button>
               </form>
             </motion.div>
@@ -352,7 +381,10 @@ export function PaymentModal({
                 transition={{ delay: 0.3 }}
                 className="text-muted-foreground mt-2"
               >
-                Your receipt has been generated.
+                {selectedFeeIds.length > 1 
+                  ? `${selectedFeeIds.length} receipts have been generated.`
+                  : 'Your receipt has been generated.'
+                }
               </motion.p>
             </motion.div>
           )}

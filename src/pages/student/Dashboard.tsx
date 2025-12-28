@@ -91,43 +91,50 @@ export default function StudentDashboard() {
     setPaymentModal({ open: true, feeId, amount, feeType, breakdown });
   };
 
-  const handlePaymentComplete = async (feeId: string) => {
-    const transactionId = `TXN${Date.now()}`;
-    const receiptNumber = `RCP${Date.now()}`;
-    const fee = fees.find(f => f.id === feeId);
-
-    if (!fee) return;
-
+  const handlePaymentComplete = async (feeIds: string[]) => {
     try {
-      // Create payment record
-      const { error: paymentError } = await supabase.from('payments').insert({
-        user_id: user?.id,
-        fee_id: feeId,
-        amount: fee.amount,
-        payment_method: 'card',
-        transaction_id: transactionId,
-        receipt_number: receiptNumber,
-        status: 'completed',
-      });
+      for (const feeId of feeIds) {
+        const transactionId = `TXN${Date.now()}_${feeId.slice(0, 8)}`;
+        const receiptNumber = `RCP${Date.now()}_${feeId.slice(0, 8)}`;
+        const fee = fees.find(f => f.id === feeId);
 
-      if (paymentError) throw paymentError;
+        if (!fee) continue;
 
-      // Update fee status
-      const { error: feeError } = await supabase
-        .from('fees')
-        .update({ status: 'paid' })
-        .eq('id', feeId);
+        // Create payment record
+        const { error: paymentError } = await supabase.from('payments').insert({
+          user_id: user?.id,
+          fee_id: feeId,
+          amount: fee.amount,
+          payment_method: 'card',
+          transaction_id: transactionId,
+          receipt_number: receiptNumber,
+          status: 'completed',
+        });
 
-      if (feeError) throw feeError;
+        if (paymentError) {
+          console.error('Payment error for fee:', feeId, paymentError);
+          continue;
+        }
 
-      // Immediately update local state to remove the paid fee from pending
+        // Update fee status
+        const { error: feeError } = await supabase
+          .from('fees')
+          .update({ status: 'paid' })
+          .eq('id', feeId);
+
+        if (feeError) {
+          console.error('Fee update error:', feeId, feeError);
+        }
+      }
+
+      // Immediately update local state - mark fees as paid
       setFees(prevFees => prevFees.map(f => 
-        f.id === feeId ? { ...f, status: 'paid' } : f
+        feeIds.includes(f.id) ? { ...f, status: 'paid' } : f
       ));
 
-      toast.success('Payment successful! Receipt generated.');
+      toast.success(`Payment successful! ${feeIds.length > 1 ? `${feeIds.length} receipts` : 'Receipt'} generated.`);
       
-      // Refetch to ensure data consistency
+      // Refetch to get updated payments list
       await fetchData();
     } catch (error) {
       console.error('Payment error:', error);
